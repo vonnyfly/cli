@@ -16,20 +16,51 @@ type iterativeParser interface {
 // combined short options from common arguments that should be left untouched.
 // Pass `shellComplete` to continue parsing options on failure during shell
 // completion when, the user-supplied options may be incomplete.
-func parseIter(set *flag.FlagSet, ip iterativeParser, args []string, shellComplete bool) error {
+func parseIter(
+	set *flag.FlagSet,
+	ip iterativeParser,
+	args []string,
+	shellComplete bool,
+	ignoreBadArgs bool,
+) (error, []string) {
+	var badArgs []string
 	for {
 		err := set.Parse(args)
 		if !ip.useShortOptionHandling() || err == nil {
 			if shellComplete {
-				return nil
+				return nil, badArgs
 			}
-			return err
+			if ignoreBadArgs && err != nil {
+				errStr := err.Error()
+				trimmed := strings.TrimPrefix(errStr, "flag provided but not defined: ")
+				badArgs = append(badArgs, trimmed)
+				var newArgs []string
+				skip := true
+				for _, arg := range args {
+					if arg == trimmed {
+						skip = false
+						continue
+					}
+					if skip {
+						continue
+					}
+					if !strings.HasPrefix(arg, "-") {
+						badArgs = append(badArgs, arg)
+					} else {
+						newArgs = append(newArgs, arg)
+					}
+				}
+				args = newArgs
+				continue
+			} else {
+				return err, badArgs
+			}
 		}
 
 		errStr := err.Error()
 		trimmed := strings.TrimPrefix(errStr, "flag provided but not defined: -")
 		if errStr == trimmed {
-			return err
+			return err, badArgs
 		}
 
 		// regenerate the initial args with the split short opts
@@ -43,7 +74,7 @@ func parseIter(set *flag.FlagSet, ip iterativeParser, args []string, shellComple
 			// if we can't split, the error was accurate
 			shortOpts := splitShortOptions(set, arg)
 			if len(shortOpts) == 1 {
-				return err
+				return err, badArgs
 			}
 
 			// swap current argument with the split version
@@ -55,13 +86,13 @@ func parseIter(set *flag.FlagSet, ip iterativeParser, args []string, shellComple
 		// This should be an impossible to reach code path, but in case the arg
 		// splitting failed to happen, this will prevent infinite loops
 		if !argsWereSplit {
-			return err
+			return err, badArgs
 		}
 
 		// Since custom parsing failed, replace the flag set before retrying
 		newSet, err := ip.newFlagSet()
 		if err != nil {
-			return err
+			return err, badArgs
 		}
 		*set = *newSet
 	}

@@ -10,7 +10,8 @@ import (
 // Command is a subcommand for a cli.App.
 type Command struct {
 	// The name of the command
-	Name string
+	Name        string
+	UnknownArgs []string
 	// short name of the command. Typically one character (deprecated, use `Aliases`)
 	ShortName string
 	// A list of aliases for the command
@@ -198,10 +199,11 @@ func (c *Command) parseFlags(args Args, shellComplete bool) (*flag.FlagSet, erro
 		return nil, err
 	}
 
-	err = parseIter(set, c, args, shellComplete)
+	err, badArgs := parseIter(set, c, args, shellComplete, true)
 	if err != nil {
 		return nil, err
 	}
+	c.UnknownArgs = badArgs
 
 	err = normalizeFlags(c.Flags, set)
 	if err != nil {
